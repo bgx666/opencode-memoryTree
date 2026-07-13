@@ -69,6 +69,47 @@ The buffer state is an in-memory message queue. It contains everything from Open
 
 On each new message, the plugin syncs incremental messages via the `experimental.chat.messages.transform` hook. When the raw message count reaches the threshold, compression is triggered.
 
+### Node data structure
+
+Each node is saved as a separate JSON file. The structure differs between leaf and parent nodes.
+
+**Leaf node (level 0)** — compressed from raw messages, retains full original text:
+
+```json
+{
+  "id": "node0_001",
+  "level": 0,
+  "summary": "用户要求收集对话数据，指令为当用户说\"1\"时助手也回复\"1\"。助手执行了该指令...",
+  "round_start": 0,
+  "round_end": 69,
+  "details": "[{\"role\":\"user\",\"content\":\"我们现在需要收集一些对话数据，我说1，你也说1。\"},{\"role\":\"assistant\",\"content\":\"1\"},...]",
+  "is_active": 1
+}
+```
+
+- `summary`: LLM-generated summary of this segment
+- `details`: JSON string of all original messages (preserved in full)
+- `round_start` / `round_end`: message range within the session
+
+**Parent node (level 1+)** — merged from multiple child nodes:
+
+```json
+{
+  "id": "node1_001",
+  "level": 1,
+  "summary": "用户与助手在对话数据收集中通过交替输出\"1\"完成了6轮交互...",
+  "children": ["node0_001", "node0_002", "node0_003"],
+  "round_start": 0,
+  "round_end": 209,
+  "details": null,
+  "is_active": 1
+}
+```
+
+- `summary`: LLM-generated summary merging child node summaries
+- `children`: list of child node IDs (for drill-down)
+- `details`: null (parent nodes do not store original messages)
+
 ### Buffer State lifecycle
 
 ```
@@ -80,11 +121,15 @@ Phase ①: Accumulate raw messages (110 reached → trigger)
 
 Phase ②: Compress first 70 messages → leaf node
 ┌──────────────────────────────────────────────┐
-│ [node0_001 msgs0-69] [msg71] ... [msg110]    │
+│ [node0_001 第0-69条: <summary>] [msg71] ...  │
 │       ↑ 70 messages condensed into 1 summary │
+│                                               │
+│  Disk: node0_001.json                         │
+│  ┌─────────────────────────────────────┐      │
+│  │ summary: "用户要求收集对话数据..."   │      │
+│  │ details: [原始消息1, 原始消息2, ...] │      │
+│  └─────────────────────────────────────┘      │
 └──────────────────────────────────────────────┘
-  Saved to disk: node0_001.json
-  details field preserves all 70 original messages
 
 Phase ③: Continue accumulating, more leaf nodes
 ┌──────────────────────────────────────────────┐
@@ -94,8 +139,16 @@ Phase ③: Continue accumulating, more leaf nodes
 
 Phase ④: Merge 3 leaf nodes into parent
 ┌──────────────────────────────────────────────┐
-│ [node1_001] [node0_004] ...                   │
-│   ↑ 3 summaries merged into 1 parent summary  │
+│ [node1_001 第0-209条: <summary>] [node0_004] │
+│   ↑ 3 child summaries merged into 1 parent    │
+│                                               │
+│  Disk: node1_001.json                         │
+│  ┌─────────────────────────────────────┐      │
+│  │ summary: "用户与助手交替输出..."     │      │
+│  │ children: [node0_001, node0_002,    │      │
+│  │            node0_003]               │      │
+│  │ details: null                       │      │
+│  └─────────────────────────────────────┘      │
 └──────────────────────────────────────────────┘
 ```
 
