@@ -1,0 +1,39 @@
+{
+  "name": "opencode-memory-tree",
+  "version": "1.0.3",
+  "description": "OpenCode plugin: compress conversation history into a hierarchical memory tree",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "opencode-memory-tree": "cli.js"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "memory",
+    "compression",
+    "memory-tree"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.0.162"
+  },
+  "files": [
+    "index.js",
+    "buffer.js",
+    "compress.js",
+    "database.js",
+    "tool.js",
+    "types.js",
+    "config.json",
+    "cli.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgx666/opencode-memoryTree.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bgx666/opencode-memoryTree/issues"
+  },
+  "homepage": "https://github.com/bgx666/opencode-memoryTree#readme"
+}

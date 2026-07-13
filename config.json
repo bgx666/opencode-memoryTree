@@ -1,0 +1,13 @@
+{
+  "compressor": {
+    "apiKey": "",
+    "model": "deepseek-v4-flash",
+    "baseUrl": "https://opencode.ai/zen/go/v1"
+  },
+  "subAgents": ["explore", "general"],
+  "maxSync": 50,
+  "maxRaw": 10,
+  "minBatch": 5,
+  "compactThreshold": 6,
+  "compactBranch": 3
+}
