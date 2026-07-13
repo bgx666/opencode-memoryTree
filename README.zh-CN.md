@@ -1,5 +1,7 @@
 # opencode-memory-tree
 
+> **⚠️ BETA** — 本插件正在活跃开发中，API 和数据格式可能发生变化。
+
 [**English**](README.md)
 
 OpenCode 插件：将对话历史压缩为层次化的记忆树。持久化、可搜索、AI 可主动访问——跨会话、跨项目。

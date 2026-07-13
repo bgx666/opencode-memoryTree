@@ -1,5 +1,7 @@
 # opencode-memory-tree
 
+> **⚠️ BETA** — This plugin is in active development. APIs and data format may change.
+
 [**中文**](README.zh-CN.md)
 
 OpenCode plugin: compress conversation history into a hierarchical memory tree. Persistent, searchable, AI-accessible — across sessions, across projects.
