@@ -1,6 +1,6 @@
 {
   "name": "opencode-memory-tree",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "OpenCode plugin: compress conversation history into a hierarchical memory tree",
   "type": "module",
   "main": "index.js",
