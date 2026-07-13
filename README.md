@@ -33,69 +33,71 @@ Copy the `opencode-memory-tree` directory to `~/.config/opencode/plugins/memory-
 OpenCode transform hook
        ↓
 ╔══════════════════════════════════╗
-║        Buffer State (内存)       ║
+║        Buffer State (memory)     ║
 ║  ┌──────────────────────────────╢
-║  │ 实时消息队列，每次 transform  │║
-║  │ hook 时与 OpenCode 同步      │║
+║  │ Real-time message queue,     │║
+║  │ synced with OpenCode on      │║
+║  │ every transform hook call    │║
 ║  └──────────────────────────────╢
-║  满 110 条原始消息 → 触发压缩    ║
+║  110 raw messages → compression │║
 ╚══════════════════════════════════╝
        ↓
 ╔══════════════════════════════════╗
-║       Memory Tree (磁盘)         ║
+║       Memory Tree (disk)         ║
 ║  ┌──────────────────────────────╢
-║  │ 分层节点树，持久化存储        │║
-║  │ └ Level 0: 叶节点，保留原文   │║
-║  │ └ Level 1+: 父节点，合并摘要  │║
+║  │ Hierarchical node tree,      │║
+║  │ persisted to disk            │║
+║  │ └ Level 0: leaf, has details │║
+║  │ └ Level 1+: parent, merged   │║
 ║  └──────────────────────────────╢
-║  AI 可通过 search_memory_tree   ║
-║  工具主动检索历史                ║
+║  AI can query via               ║
+║  search_memory_tree tool        ║
 ╚══════════════════════════════════╝
 ```
 
 ### Buffer State
 
-Buffer state 是一个内存中的消息队列，它包含 OpenCode 原始上下文的全部内容：
+The buffer state is an in-memory message queue. It contains everything from OpenCode's original context:
 
-- 用户消息
-- 助手回复
-- thinking / reasoning
-- 工具调用及结果
-- 系统注入的提示（Plan / Build 模式等）
+- User messages
+- Assistant responses
+- Thinking / reasoning
+- Tool calls and results
+- System-injected prompts (Plan / Build mode, etc.)
 
-每收到新消息，插件通过 OpenCode 的 `experimental.chat.messages.transform` hook 将增量消息同步到 buffer 中。达到阈值后，触发压缩。
+On each new message, the plugin syncs incremental messages via the `experimental.chat.messages.transform` hook. When the raw message count reaches the threshold, compression is triggered.
 
-### Buffer State 快照变化
+### Buffer State lifecycle
 
 ```
-阶段①：累积原始消息（达到 110 条触发）
+Phase ①: Accumulate raw messages (110 reached → trigger)
 ┌──────────────────────────────────────────────┐
 │ [msg1] [msg2] [msg3] ... [msg110]            │
-│ 原始消息数: 110/110                           │
+│ raw messages: 110/110                         │
 └──────────────────────────────────────────────┘
 
-阶段②：压缩前 70 条 → 叶节点
+Phase ②: Compress first 70 messages → leaf node
 ┌──────────────────────────────────────────────┐
-│ [node0_001 第0-69条] [msg71] ... [msg110]    │
-│         ↑ 70 条消息浓缩为 1 条摘要            │
+│ [node0_001 msgs0-69] [msg71] ... [msg110]    │
+│       ↑ 70 messages condensed into 1 summary │
 └──────────────────────────────────────────────┘
-  节点保存到磁盘：node0_001.json
-  details 字段保留 70 条消息的完整原文
+  Saved to disk: node0_001.json
+  details field preserves all 70 original messages
 
-阶段③：继续累积，产生多个叶节点
+Phase ③: Continue accumulating, more leaf nodes
 ┌──────────────────────────────────────────────┐
 │ [node0_001] [node0_002] [node0_003] ... ×6   │
-│ 叶节点数: 6/6 → 触发向上合并                  │
+│ leaf count: 6/6 → merging triggered           │
 └──────────────────────────────────────────────┘
 
-阶段④：前 3 个叶节点合并为父节点
+Phase ④: Merge 3 leaf nodes into parent
 ┌──────────────────────────────────────────────┐
 │ [node1_001] [node0_004] ...                   │
-│   ↑ 3 条摘要合并为 1 条总摘要                 │
+│   ↑ 3 summaries merged into 1 parent summary  │
 └──────────────────────────────────────────────┘
 ```
 
-### Memory Tree 结构
+### Memory Tree structure
 
 ```
 Level 2               node2_001
@@ -108,15 +110,15 @@ Level 0  node0_001 node0_002 node0_003 node0_004
         (details) (details)  (details)  (details)
 ```
 
-- **Level 0（叶节点）**：由原始消息压缩而成，`details` 保留完整原文
-- **Level 1+（父节点）**：由下层节点摘要合并而成，只存摘要
-- **search_memory_tree**：AI 主动查询工具，展开节点可查看原文或子节点
+- **Level 0 (leaf)**: Compressed from raw messages, `details` field preserves original text
+- **Level 1+ (parent)**: Merged from child node summaries, only stores summary
+- **search_memory_tree**: AI query tool — expands leaf nodes to original messages, expands parent nodes to show children
 
 ---
 
 ## Configuration
 
-所有配置集中在一个文件：`~/.config/opencode/plugins/memory-tree/config.json`
+All settings in one file: `~/.config/opencode/plugins/memory-tree/config.json`
 
 ```json
 {
@@ -134,26 +136,26 @@ Level 0  node0_001 node0_002 node0_003 node0_004
 }
 ```
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `compressor.apiKey` | `""` | 通过环境变量 `OPENCODE_MEMORY_API_KEY` 设置 |
-| `compressor.model` | `deepseek-v4-flash` | 压缩使用的模型 |
-| `compressor.baseUrl` | — | 模型 API 地址 |
-| `maxSync` | 50 | 首次同步时最多从历史拉取的消息数 |
-| `maxRaw` | 110 | 原始消息超过此数量触发压缩 |
-| `minBatch` | 70 | 一次压缩的消息数 |
-| `compactThreshold` | 6 | 同层节点数达到此值触发向上合并 |
-| `compactBranch` | 3 | 一次合并的子节点数 |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `compressor.apiKey` | `""` | Set via `OPENCODE_MEMORY_API_KEY` env var |
+| `compressor.model` | `deepseek-v4-flash` | Model used for compression |
+| `compressor.baseUrl` | — | API endpoint |
+| `maxSync` | 50 | Max messages synced from history on first load |
+| `maxRaw` | 110 | Raw message count triggering compression |
+| `minBatch` | 70 | Messages compressed per batch |
+| `compactThreshold` | 6 | Node count at a level triggering parent merge |
+| `compactBranch` | 3 | Nodes merged per parent |
 
-### API Key 安全
+### API Key Security
 
-API key 通过环境变量传入，不会出现在任何代码或配置文件中：
+The API key is set via environment variable, never committed to code or config:
 
 ```bash
 export OPENCODE_MEMORY_API_KEY=sk-xxx
 ```
 
-也可在 Windows 上永久设置：
+Permanent setup on Windows:
 
 ```powershell
 setx OPENCODE_MEMORY_API_KEY "sk-xxx"
@@ -161,36 +163,25 @@ setx OPENCODE_MEMORY_API_KEY "sk-xxx"
 
 ---
 
-## Usage
+## AI Usage
 
-### AI 自动使用
+The plugin works automatically. When raw messages exceed `maxRaw`, compression runs in the background. The AI can also query historical conversations using the `search_memory_tree` tool:
 
-安装后插件自动工作。当 buffer 中的原始消息超过 `maxRaw` 时，压缩过程自动触发。AI 也可以通过 `search_memory_tree` 工具主动查询历史记忆。
+- **Leaf node** (`node0_XXX`): Returns original messages
+- **Parent node** (`node1_XXX`, etc.): Returns child list and summaries
 
-AI 在以下情况会自动使用该工具：
-
-- 看到对话中出现的 `[nodeX_XXX]` 压缩摘要标记
-- 对某段历史记忆不确定，需要回顾细节
-
-### search_memory_tree
-
-| 参数 | 说明 |
-|------|------|
-| `node_id` | 节点 ID，如 `node0_001`、`node1_002` |
-
-- 叶节点（node0_XXX）：返回原始消息内容
-- 父节点（node1_XXX 等）：返回子节点列表及摘要
+The AI is encouraged to use this tool proactively whenever it needs more context from earlier in the conversation.
 
 ---
 
 ## Comparison with OpenCode's built-in compaction
 
-| | OpenCode 自带 compaction | memory-tree 插件 |
+| | OpenCode compaction | memory-tree plugin |
 |---|---|---|
-| **存储方式** | 不保留，压缩后原始消息丢失 | 节点持久化到磁盘，原文不丢 |
-| **可查询** | 否 | 可，通过 `search_memory_tree` |
-| **粒度** | 单层摘要 | 多层树结构，可钻取 |
-| **AI 可控** | 被动触发 | 主动查询，AI 可自主决定 |
+| **Storage** | Not preserved after compaction | Persisted to disk, original text kept |
+| **Searchable** | No | Yes, via `search_memory_tree` |
+| **Granularity** | Single-level summary | Multi-level tree, drillable |
+| **AI control** | Passive (triggered at limit) | Active (AI queries on demand) |
 
 ---
 
@@ -199,24 +190,24 @@ AI 在以下情况会自动使用该工具：
 ```
 .opencode/plugins/memory-tree/
 └── data/
-    ├── buffer-states.json    ← Buffer state 快照
-    ├── index.json            ← 树索引
-    ├── nodes/                ← 节点文件
-    │   ├── node0_001.json    ← 叶节点（含原始消息）
-    │   ├── node1_001.json    ← 父节点
+    ├── buffer-states.json    ← Buffer state snapshot
+    ├── index.json            ← Tree index
+    ├── nodes/                ← Node files
+    │   ├── node0_001.json    ← Leaf node (has details)
+    │   ├── node1_001.json    ← Parent node
     │   └── ...
-    └── debug.log             ← 调试日志
+    └── debug.log             ← Debug log
 ```
 
-每个项目的数据独立存储，互不干扰。
+Data is isolated per project — each project has its own `data/` directory.
 
 ---
 
 ## Known limitations
 
-- 压缩需要调用 LLM，会产生 API 费用
-- 首次在已有对话中启用时，最多拉取最近 50 条消息（`maxSync`）
-- 子 Agent（subAgent）的消息不进入 buffer
+- Compression requires LLM API calls (costs apply)
+- On first load, syncs at most 50 recent messages (`maxSync`)
+- Sub-agent messages do not enter the buffer
 
 ---
 
