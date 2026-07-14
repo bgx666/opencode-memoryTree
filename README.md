@@ -93,10 +93,10 @@ What the LLM receives:
 │ ...                                      │    (after the target)
 │ user: raw message 699                    │
 │ user: [COMPRESS] Compress the following  │  ← instruction
-│ user: raw message 490                    │
-│ user: raw message 491                    │  ← target segment
+│ user: raw message 560                    │
+│ user: raw message 561                    │  ← target segment
 │ ...                                      │    (copied to tail)
-│ user: raw message 559                    │
+│ user: raw message 629                    │
 │ user: Summary:                           │  ← output prompt
 └─────────────────────────────────────────┘
 ```
