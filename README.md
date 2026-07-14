@@ -100,8 +100,6 @@ What the LLM receives:
 └─────────────────────────────────────────┘
 ```
 
-#### Why this matters
-
 By preserving the full context and appending the target at the end, the LLM can see **future messages** while generating the summary for older content. This means earlier conclusions that were later corrected are summarized in their final, correct form.
 
 ### Node data structure
