@@ -89,9 +89,9 @@ What the LLM receives:
 │ ...                                      │    (still in original
 │ user: raw message 629                    │     position)
 │ user: raw message 630                    │
-│ user: raw message 631                    │  ← subsequent messages
-│ ...                                      │    (after the target)
-│ user: raw message 699                    │
+│ user: raw message 631                    │  ← remaining raw messages
+│ ...                                      │    (total 110, triggering
+│ user: raw message 669                    │     next compression)
 │ user: [COMPRESS] Compress the following  │  ← instruction
 │ user: raw message 560                    │
 │ user: raw message 561                    │  ← target segment
