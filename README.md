@@ -101,14 +101,13 @@ What the LLM receives:
 
 #### Why this matters
 
-Traditional compression only sees the segment being compressed — it has no knowledge of what happened next. By preserving the full context and appending the target at the end, the LLM can see **future messages** while generating the summary for older content.
+By preserving the full context and appending the target at the end, the LLM can see **future messages** while generating the summary for older content. This means:
 
-This reduces two common problems:
+- **Earlier conclusions that were later corrected** are summarized in their final, correct form
+- **Contradictory messages** are resolved — later developments show which direction prevailed
+- **Conversation continuity** is maintained because the original target text stays in place; the copy at the tail is only for the LLM to reference
 
-- **Error accumulation**: If early conclusions were later corrected, the summary can reflect the final state
-- **Context conflict**: When two messages contradict each other, later developments show which direction prevailed
-
-The target text appears in both its original position (maintaining conversation continuity) and appended at the tail (wrapped with compression instructions). The LLM reads the full story, then produces a summary that accounts for everything that followed.
+The LLM reads the full story, then produces a summary that accounts for everything that followed.
 
 ### Node data structure
 
