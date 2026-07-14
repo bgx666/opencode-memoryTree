@@ -261,16 +261,7 @@ The plugin works automatically. When raw messages exceed `maxRaw`, compression r
 
 The AI is encouraged to use this tool proactively whenever it needs more context from earlier in the conversation.
 
----
 
-## Comparison with OpenCode's built-in compaction
-
-| | OpenCode compaction | memory-tree plugin |
-|---|---|---|
-| **Storage** | Not preserved after compaction | Persisted to disk, original text kept |
-| **Searchable** | No | Yes, via `search_memory_tree` |
-| **Granularity** | Single-level summary | Multi-level tree, drillable |
-| **AI control** | Passive (triggered at limit) | Active (AI queries on demand) |
 
 ---
 

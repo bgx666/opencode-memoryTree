@@ -259,16 +259,7 @@ setx OPENCODE_MEMORY_API_KEY "sk-xxx"
 
 AI 在任何时候觉得需要更多上下文时，都可以主动调用此工具。
 
----
 
-## 与 OpenCode 自带 compaction 的对比
-
-| | OpenCode 自带 compaction | memory-tree 插件 |
-|---|---|---|
-| **存储方式** | 不保留，压缩后原始消息丢失 | 持久化到磁盘，原文不丢 |
-| **可查询** | 否 | 可，通过 `search_memory_tree` |
-| **粒度** | 单层摘要 | 多层树结构，可逐级钻取 |
-| **AI 控制** | 被动触发（达到上限时） | 主动查询，AI 自行决定 |
 
 ---
 
