@@ -4,7 +4,7 @@
 
 [**中文**](README.zh-CN.md)
 
-OpenCode plugin: compress conversation history into a hierarchical memory tree. Persistent, searchable, AI-accessible — across sessions, across projects.
+OpenCode plugin: compress conversation history into a hierarchical memory tree. Persistent, searchable, AI-accessible — across sessions, within the same project.
 
 ---
 
