@@ -80,21 +80,22 @@ What the LLM receives:
 
 ┌─────────────────────────────────────────┐
 │ system: {system prompt}                  │
-│ user: [node0_001] msgs 0-69: <summary>   │  ← previous summaries
-│ user: [node1_001] msgs 70-139: <summary> │
-│ user: raw message 140                    │
-│ user: raw message 141                    │  ← target segment
+│ user: [node1_001] msgs 0-209: <summary>  │  ← previous summaries
+│ user: [node1_002] msgs 210-419: <summary>│     (parent nodes)
+│ user: [node0_003] msgs 420-489: <summary>│  ← remaining leaf nodes
+│ user: raw message 490                    │
+│ user: raw message 491                    │  ← target segment
 │ ...                                      │    (still in original
-│ user: raw message 209                    │     position)
-│ user: raw message 210                    │
-│ user: raw message 211                    │  ← subsequent messages
+│ user: raw message 559                    │     position)
+│ user: raw message 560                    │
+│ user: raw message 561                    │  ← subsequent messages
 │ ...                                      │    (after the target)
-│ user: raw message 279                    │
+│ user: raw message 629                    │
 │ user: [COMPRESS] Compress the following  │  ← instruction
-│ user: raw message 140                    │
-│ user: raw message 141                    │  ← target segment
+│ user: raw message 490                    │
+│ user: raw message 491                    │  ← target segment
 │ ...                                      │    (copied to tail)
-│ user: raw message 209                    │
+│ user: raw message 559                    │
 │ user: Summary:                           │  ← output prompt
 └─────────────────────────────────────────┘
 ```
