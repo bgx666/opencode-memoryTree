@@ -71,6 +71,45 @@ The buffer state is an in-memory message queue. It contains everything from Open
 
 On each new message, the plugin syncs incremental messages via the `experimental.chat.messages.transform` hook. When the raw message count reaches the threshold, compression is triggered.
 
+### Compression approach: full context + append target
+
+When compression triggers, the plugin sends the **complete buffer** to the LLM — not just the segment being compressed. The target text is duplicated and appended at the end with compression instructions:
+
+```
+What the LLM receives:
+
+┌─────────────────────────────────────────┐
+│ system: {system prompt}                  │
+│ user: [node0_001] msgs 0-69: <summary>   │  ← previous summaries
+│ user: [node1_001] msgs 70-139: <summary> │
+│ user: raw message 140                    │
+│ user: raw message 141                    │  ← target segment
+│ ...                                      │    (still in original
+│ user: raw message 209                    │     position)
+│ user: raw message 210                    │
+│ user: raw message 211                    │  ← subsequent messages
+│ ...                                      │    (after the target)
+│ user: raw message 279                    │
+│ user: [COMPRESS] Compress the following  │  ← instruction
+│ user: raw message 140                    │
+│ user: raw message 141                    │  ← target segment
+│ ...                                      │    (copied to tail)
+│ user: raw message 209                    │
+│ user: Summary:                           │  ← output prompt
+└─────────────────────────────────────────┘
+```
+
+#### Why this matters
+
+Traditional compression only sees the segment being compressed — it has no knowledge of what happened next. By preserving the full context and appending the target at the end, the LLM can see **future messages** while generating the summary for older content.
+
+This reduces two common problems:
+
+- **Error accumulation**: If early conclusions were later corrected, the summary can reflect the final state
+- **Context conflict**: When two messages contradict each other, later developments show which direction prevailed
+
+The target text appears in both its original position (maintaining conversation continuity) and appended at the tail (wrapped with compression instructions). The LLM reads the full story, then produces a summary that accounts for everything that followed.
+
 ### Node data structure
 
 Each node is saved as a separate JSON file. The structure differs between leaf and parent nodes.
