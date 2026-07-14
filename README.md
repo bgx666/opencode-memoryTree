@@ -104,8 +104,6 @@ What the LLM receives:
 By preserving the full context and appending the target at the end, the LLM can see **future messages** while generating the summary for older content. This means:
 
 - **Earlier conclusions that were later corrected** are summarized in their final, correct form
-- **Contradictory messages** are resolved — later developments show which direction prevailed
-The LLM reads the full story, then produces a summary that accounts for everything that followed.
 
 ### Node data structure
 
