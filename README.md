@@ -105,8 +105,6 @@ By preserving the full context and appending the target at the end, the LLM can 
 
 - **Earlier conclusions that were later corrected** are summarized in their final, correct form
 - **Contradictory messages** are resolved — later developments show which direction prevailed
-- **Conversation continuity** is maintained because the original target text stays in place; the copy at the tail is only for the LLM to reference
-
 The LLM reads the full story, then produces a summary that accounts for everything that followed.
 
 ### Node data structure
