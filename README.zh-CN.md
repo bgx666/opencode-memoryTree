@@ -248,20 +248,11 @@ Windows 上永久设置：
 setx OPENCODE_MEMORY_API_KEY "sk-xxx"
 ```
 
----
-
-## AI 使用
-
-插件安装后自动工作。buffer 中原始消息超过 `maxRaw` 时，自动触发压缩。AI 也可以通过 `search_memory_tree` 工具主动查询历史记忆：
-
-- **叶节点**（`node0_XXX`）：返回原始消息内容
-- **父节点**（`node1_XXX` 等）：返回子节点列表及摘要
-
-AI 在任何时候觉得需要更多上下文时，都可以主动调用此工具。
-
 
 
 ---
+
+
 
 ## 数据存储
 

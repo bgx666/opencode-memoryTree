@@ -250,20 +250,11 @@ Permanent setup on Windows:
 setx OPENCODE_MEMORY_API_KEY "sk-xxx"
 ```
 
----
-
-## AI Usage
-
-The plugin works automatically. When raw messages exceed `maxRaw`, compression runs in the background. The AI can also query historical conversations using the `search_memory_tree` tool:
-
-- **Leaf node** (`node0_XXX`): Returns original messages
-- **Parent node** (`node1_XXX`, etc.): Returns child list and summaries
-
-The AI is encouraged to use this tool proactively whenever it needs more context from earlier in the conversation.
-
 
 
 ---
+
+
 
 ## Data Storage
 
