@@ -9,5 +9,6 @@
   "maxRaw": 10,
   "minBatch": 5,
   "compactThreshold": 6,
-  "compactBranch": 3
+  "compactBranch": 3,
+  "debug": false
 }

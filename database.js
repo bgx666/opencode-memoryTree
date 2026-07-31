@@ -1,5 +1,17 @@
 import * as fs from "fs"
 import * as path from "path"
+import * as crypto from "crypto"
+
+/**
+ * 原子写入：先写临时文件，再 rename 替换目标文件。
+ * 避免进程崩溃/断电时文件写到一半导致 JSON 损坏。
+ */
+function atomicWriteSync(filePath, data) {
+  const dir = path.dirname(filePath)
+  const tmp = path.join(dir, `.tmp_${crypto.randomBytes(6).toString("hex")}`)
+  fs.writeFileSync(tmp, data, "utf-8")
+  fs.renameSync(tmp, filePath)
+}
 
 export class MemoryTree {
   constructor(storeDir) {
@@ -17,7 +29,26 @@ export class MemoryTree {
     this.meta = {}
     this.levelCounters = new Map()
 
-    fs.mkdirSync(this.nodesDir, { recursive: true })
+    try {
+      fs.mkdirSync(this.nodesDir, { recursive: true })
+    } catch (err) {
+      console.error("[memory-tree] Failed to create nodes directory:", err.message)
+      throw err
+    }
+
+    // 清理上次崩溃可能残留的临时文件
+    try {
+      for (const f of fs.readdirSync(this.nodesDir)) {
+        if (f.startsWith(".tmp_")) {
+          fs.unlinkSync(path.join(this.nodesDir, f))
+        }
+      }
+      for (const f of fs.readdirSync(storeDir)) {
+        if (f.startsWith(".tmp_")) {
+          fs.unlinkSync(path.join(storeDir, f))
+        }
+      }
+    } catch {}
 
     this.loadIndex()
     this.loadBufferStates()
@@ -33,12 +64,19 @@ export class MemoryTree {
           root_node_id: raw.root_node_id ?? null,
           nodes_by_level: raw.nodes_by_level ?? {},
         }
-      } catch {}
+      } catch (err) {
+        console.error("[memory-tree] index.json corrupted, resetting:", err.message)
+        this.index = { root_node_id: null, nodes_by_level: {} }
+      }
     }
   }
 
   saveIndex() {
-    fs.writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2), "utf-8")
+    try {
+      atomicWriteSync(this.indexFile, JSON.stringify(this.index, null, 2))
+    } catch (err) {
+      console.error("[memory-tree] Failed to save index:", err.message)
+    }
   }
 
   loadBufferStates() {
@@ -52,26 +90,42 @@ export class MemoryTree {
             this.bufferStates.set(k, v)
           }
         }
-      } catch {}
+      } catch (err) {
+        console.error("[memory-tree] buffer-states.json corrupted, starting fresh:", err.message)
+        this.bufferStates = new Map()
+      }
     }
   }
 
   saveBufferStates() {
-    const bm = {}
-    for (const [k, v] of this.bufferStates) {
-      bm[k] = v
+    try {
+      const bm = {}
+      for (const [k, v] of this.bufferStates) {
+        bm[k] = v
+      }
+      atomicWriteSync(this.bufferFile, JSON.stringify(bm, null, 2))
+    } catch (err) {
+      console.error("[memory-tree] Failed to save buffer states:", err.message)
     }
-    fs.writeFileSync(this.bufferFile, JSON.stringify(bm, null, 2), "utf-8")
   }
 
   loadMeta() {
     if (fs.existsSync(this.metaFile)) {
-      try { this.meta = JSON.parse(fs.readFileSync(this.metaFile, "utf-8")) } catch {}
+      try {
+        this.meta = JSON.parse(fs.readFileSync(this.metaFile, "utf-8"))
+      } catch (err) {
+        console.error("[memory-tree] meta.json corrupted, resetting:", err.message)
+        this.meta = {}
+      }
     }
   }
 
   saveMeta() {
-    fs.writeFileSync(this.metaFile, JSON.stringify(this.meta, null, 2), "utf-8")
+    try {
+      atomicWriteSync(this.metaFile, JSON.stringify(this.meta, null, 2))
+    } catch (err) {
+      console.error("[memory-tree] Failed to save meta:", err.message)
+    }
   }
 
   initLevelCounters() {
@@ -124,8 +178,11 @@ export class MemoryTree {
       details: node.details ?? null,
       is_active: node.is_active ?? 1,
     }
-    fs.writeFileSync(this.nodeFilePath(node.id), JSON.stringify(entry, null, 2), "utf-8")
 
+    // 先写节点文件（原子写入）
+    atomicWriteSync(this.nodeFilePath(node.id), JSON.stringify(entry, null, 2))
+
+    // 节点文件写入成功后再更新索引
     const levelKey = String(entry.level)
     const list = this.index.nodes_by_level[levelKey] ?? []
     if (!list.includes(node.id)) {
@@ -213,12 +270,18 @@ export class MemoryTree {
 
   updateNode(sessionId, nodeId, updates) {
     const n = this.getNode(sessionId, nodeId)
-    if (!n) return
+    if (!n) return false
     if (updates.summary !== undefined) n.summary = updates.summary
     if (updates.parent_id !== undefined) n.parent_id = updates.parent_id
     if (updates.children !== undefined) n.children = updates.children
     if (updates.is_active !== undefined) n.is_active = updates.is_active
-    fs.writeFileSync(this.nodeFilePath(nodeId), JSON.stringify(n, null, 2), "utf-8")
+    try {
+      atomicWriteSync(this.nodeFilePath(nodeId), JSON.stringify(n, null, 2))
+      return true
+    } catch (err) {
+      console.error(`[memory-tree] Failed to update node ${nodeId}:`, err.message)
+      return false
+    }
   }
 
   setNodesInactive(sessionId, nodeIds) {

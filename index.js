@@ -13,16 +13,13 @@ import * as fs from "fs"
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const TREE_KEY = "default"
-let serverCallCount = 0
 
 export default {
   id: "memory-tree",
   async server(ctx, options) {
-    serverCallCount++
     const dir = (ctx.directory) || (ctx.worktree) || ""
     const pluginDir = __dirname
     const storePath = path.join(dir, ".opencode", "plugins", "memory-tree", "data")
-    const logFilePath = path.join(storePath, "debug.log")
 
     // 从 config.json 加载配置，options 中的值可以覆盖
     let config = {}
@@ -35,10 +32,9 @@ export default {
       : null
     const subAgents = options?.subAgents || config.subAgents || []
     const maxSync = options?.maxSync ?? config.maxSync ?? 50
+    const debug = options?.debug ?? config.debug ?? false
 
     const tree = new MemoryTree(storePath)
-
-    fs.appendFileSync(logFilePath, `[server called] #${serverCallCount} dir=${ctx.directory} worktree=${ctx.worktree} options=${JSON.stringify(options)}\n`)
 
     let state = null
 
@@ -55,15 +51,10 @@ export default {
         } catch {
           buffer = []
         }
-      } else {
-        tree.archiveSessionNodes(TREE_KEY)
       }
+      // 无存档时不再 archive 节点，保持跨会话接续
 
       const savedPrompt = tree.getMeta("system_prompt") || ""
-
-      const logFilePath = path.join(storePath, "debug.log")
-      const instanceId = serverCallCount
-      fs.appendFileSync(logFilePath, `--- session start (instance #${instanceId}) ---\n`)
 
       state = {
         sessionId: TREE_KEY,
@@ -77,74 +68,89 @@ export default {
           compactBranch: config.compactBranch ?? 3,
         },
         systemPrompt: savedPrompt,
-        logFilePath,
-        instanceId,
+        debug,
       }
 
       return state
+    }
+
+    function debugLog(s, msg) {
+      if (!s.debug) return
+      const logFilePath = path.join(storePath, "debug.log")
+      fs.appendFile(logFilePath, `[${Date.now()}] ${msg}\n`, () => {})
     }
 
     const hooks = {
       "experimental.chat.messages.transform": async (
         _input, output
       ) => {
-        const messages = output.messages
-        if (!messages) return
+        try {
+          const messages = output.messages
+          if (!messages || !Array.isArray(messages)) return
 
-        const agent = messages[0]?.info?.agent
-        if (agent && subAgents.includes(agent)) return
+          // 检查是否为 sub-agent 消息：遍历前几条消息检查 agent 字段
+          const isSubAgent = messages.slice(0, 3).some(
+            (m) => m?.info?.agent && subAgents.includes(m.info.agent)
+          )
+          if (isSubAgent) return
 
-        const s = getState()
+          const s = getState()
 
-        let lastKnownId = null
-        for (let i = s.buffer.length - 1; i >= 0; i--) {
-          if (s.buffer[i].original_id) {
-            lastKnownId = s.buffer[i].original_id
-            break
-          }
-        }
-
-        let matchIdx = -1
-        if (lastKnownId) {
-          for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].info?.id === lastKnownId) {
-              matchIdx = i
+          let lastKnownId = null
+          for (let i = s.buffer.length - 1; i >= 0; i--) {
+            if (s.buffer[i].original_id) {
+              lastKnownId = s.buffer[i].original_id
               break
             }
           }
+
+          let matchIdx = -1
+          if (lastKnownId) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i]?.info?.id === lastKnownId) {
+                matchIdx = i
+                break
+              }
+            }
+          }
+
+          const newMessages = matchIdx !== -1
+            ? messages.slice(matchIdx + 1)
+            : messages.slice(Math.max(0, messages.length - maxSync))
+          for (const msg of newMessages) {
+            if (!msg?.info || !msg?.parts) continue
+            const bm = messageToBuffer(msg.info, msg.parts)
+            if (bm) s.buffer.push(bm)
+          }
+
+          const rawCount = rawMessageCount(s.buffer)
+          if (rawCount >= s.config.maxRaw && compressorConfig) {
+            await doCompress(s, compressorConfig)
+          }
+
+          debugLog(s, `[transform] buffer len=${s.buffer.length} rawCount=${rawCount}`)
+          s.tree.saveBufferState(s.buffer, TREE_KEY)
+
+          output.messages.length = 0
+          output.messages.push(...s.buffer.map(bufferToMessage))
+        } catch (err) {
+          console.error("[memory-tree] messages.transform error:", err.message)
+          // 插件出错时不干扰 OpenCode 正常流程
         }
-
-        const newMessages = matchIdx !== -1
-          ? messages.slice(matchIdx + 1)
-          : messages.slice(Math.max(0, messages.length - maxSync))
-        for (const msg of newMessages) {
-          const bm = messageToBuffer(msg.info, msg.parts)
-          if (bm) s.buffer.push(bm)
-        }
-
-        const rawCount = rawMessageCount(s.buffer)
-        if (rawCount >= s.config.maxRaw && compressorConfig) {
-          await doCompress(s, compressorConfig)
-        }
-
-        fs.appendFileSync(
-          s.logFilePath,
-          `[transform pre-save] ${Date.now()} inst=${s.instanceId} buffer[0]=${s.buffer[0]?._node_id} buffer[1]=${s.buffer[1]?._node_id} len=${s.buffer.length}\n`,
-        )
-        s.tree.saveBufferState(s.buffer, TREE_KEY)
-
-        output.messages.length = 0
-        output.messages.push(...s.buffer.map(bufferToMessage))
       },
 
       "experimental.chat.system.transform": async (
         _input, output
       ) => {
-        const system = output.system
-        if (!system) return
-        const s = getState()
-        s.systemPrompt = system.join("\n")
-        s.tree.setMeta("system_prompt", s.systemPrompt)
+        try {
+          const system = output.system
+          if (!system) return
+          const s = getState()
+          s.systemPrompt = system.join("\n")
+          s.tree.setMeta("system_prompt", s.systemPrompt)
+        } catch (err) {
+          console.error("[memory-tree] system.transform error:", err.message)
+        }
       },
     }
 
