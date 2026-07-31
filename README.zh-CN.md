@@ -1,10 +1,8 @@
 # opencode-memory-tree
 
-> **⚠️ BETA** — 本插件正在活跃开发中，API 和数据格式可能发生变化。
-
 [**English**](README.md)
 
-OpenCode 插件：将对话历史压缩为层次化的记忆树。持久化、可搜索、AI 可主动访问——跨会话，同一项目内。
+OpenCode 插件：将对话历史压缩为层次化的记忆树。持久化、可搜索、AI 可主动访问——每个会话拥有自己独立的记忆树，相当于给每个会话提供近似无限的上下文。
 
 ---
 
@@ -25,7 +23,7 @@ export OPENCODE_MEMORY_API_KEY=sk-xxx
 
 ### 手动安装（不用 npm）
 
-将 `opencode-memory-tree` 目录复制到 `~/.config/opencode/plugins/memory-tree/`——OpenCode 会自动发现该目录下的插件，无需修改任何配置文件。
+将 `opencode-memory-tree` 目录复制到项目的 `.opencode/plugins/memory-tree/`——OpenCode 会自动发现该目录下的插件，插件将只对该项目生效。（也可以复制到 `~/.config/opencode/plugins/memory-tree/` 对所有项目全局生效。）无需修改任何配置文件。
 
 ---
 
@@ -42,7 +40,8 @@ OpenCode transform hook
 ║  │ 实时消息队列，每次 transform  │║
 ║  │ hook 时与 OpenCode 同步      │║
 ║  └──────────────────────────────╢
-║  满 110 条原始消息 → 触发压缩    ║
+║  原始消息数达到 maxRaw          │║
+║  （默认 10）→ 触发压缩          │║
 ╚══════════════════════════════════╝
        ↓
 ╔══════════════════════════════════╗
@@ -56,6 +55,15 @@ OpenCode transform hook
 ║  工具主动检索历史                ║
 ╚══════════════════════════════════╝
 ```
+
+### 每会话独立隔离
+
+每个 OpenCode 会话拥有自己独立的记忆树：
+
+- **Buffer 和树都是按会话隔离的**——存储在 `data/sessions/<sessionID>/` 下，一个会话的消息永远不会泄漏到另一个会话的上下文中。
+- **恢复会话**（重启后使用同一会话 ID）会自动恢复其 buffer 和记忆树。
+- **开启新会话**从干净的 buffer 和空树开始——换会话意味着全新的上下文，每个会话的记忆独立增长，最终接近无限上下文。
+- 无跨会话状态竞争：并发的会话写入各自的目录。
 
 ### Buffer State
 
@@ -88,7 +96,7 @@ Buffer State 是一个内存中的消息队列，包含 OpenCode 原始上下文
 │ user: 原始消息 629                        │
 │ user: 原始消息 630                        │
 │ user: 原始消息 631                        │  ← 剩余原始消息
-│ ...                                      │     （共 110 条，
+│ ...                                      │     （累积到 maxRaw，
 │ user: 原始消息 669                        │      下次触发压缩）
 │ user: [COMPRESS] 压缩以下对话...          │  ← 压缩指令
 │ user: 原始消息 560                        │
@@ -145,16 +153,16 @@ Buffer State 是一个内存中的消息队列，包含 OpenCode 原始上下文
 ### Buffer State 的生命周期
 
 ```
-阶段①：累积原始消息（达到 110 条触发）
+阶段①：累积原始消息（达到 maxRaw 触发）
 ┌──────────────────────────────────────────────┐
-│ [msg1] [msg2] [msg3] ... [msg110]            │
-│ 原始消息数: 110/110                           │
+│ [msg1] [msg2] [msg3] ... [msg10]            │
+│ 原始消息数: 10/10（maxRaw 默认值）           │
 └──────────────────────────────────────────────┘
 
-阶段②：压缩前 70 条 → 叶节点
+阶段②：压缩前 minBatch 条 → 叶节点
 ┌──────────────────────────────────────────────┐
-│ [node0_001 第0-69条: <摘要>] [msg71] ...     │
-│         ↑ 70 条消息浓缩为 1 条摘要            │
+│ [node0_001 第0-4条: <摘要>] [msg6] ...      │
+│         ↑ 5 条消息浓缩为 1 条摘要            │
 │                                               │
 │  磁盘上：node0_001.json                       │
 │  ┌─────────────────────────────────────┐      │
@@ -193,7 +201,7 @@ Level 1       node1_001       node1_002
              ↗    ↘          ↗    ↘
 Level 0  node0_001 node0_002 node0_003 node0_004
           ↓         ↓         ↓         ↓
-       msg1-70  msg71-140  msg141-210 msg211-280
+        msg0-4   msg5-9    msg10-14  msg15-19
         (details) (details)  (details)  (details)
 ```
 
@@ -205,7 +213,7 @@ Level 0  node0_001 node0_002 node0_003 node0_004
 
 ## 配置
 
-所有配置集中在同一个文件：`~/.config/opencode/plugins/memory-tree/config.json`
+所有配置集中在同一个文件：插件目录下的 `config.json`（例如 `.opencode/plugins/memory-tree/config.json`）
 
 ```json
 {
@@ -216,10 +224,11 @@ Level 0  node0_001 node0_002 node0_003 node0_004
   },
   "subAgents": ["explore", "general"],
   "maxSync": 50,
-  "maxRaw": 110,
-  "minBatch": 70,
+  "maxRaw": 10,
+  "minBatch": 5,
   "compactThreshold": 6,
-  "compactBranch": 3
+  "compactBranch": 3,
+  "debug": false
 }
 ```
 
@@ -229,10 +238,11 @@ Level 0  node0_001 node0_002 node0_003 node0_004
 | `compressor.model` | `deepseek-v4-flash` | 压缩使用的模型 |
 | `compressor.baseUrl` | — | 模型 API 地址 |
 | `maxSync` | 50 | 首次加载时最多从历史同步的消息数 |
-| `maxRaw` | 110 | 原始消息超过此数量触发压缩 |
-| `minBatch` | 70 | 每次压缩的消息数 |
+| `maxRaw` | 10 | 原始消息超过此数量触发压缩 |
+| `minBatch` | 5 | 每次压缩的消息数 |
 | `compactThreshold` | 6 | 同层节点数达到此值触发向上合并 |
 | `compactBranch` | 3 | 每次合并的子节点数 |
+| `debug` | false | 为 true 时在会话数据目录写入 `debug.log` |
 
 ### API Key 安全
 
@@ -257,24 +267,28 @@ setx OPENCODE_MEMORY_API_KEY "sk-xxx"
 ## 数据存储
 
 ```
-.opencode/plugins/memory-tree/
+<项目>/.opencode/plugins/memory-tree/
 └── data/
-    ├── buffer-states.json    ← Buffer state 快照
-    ├── index.json            ← 树索引
-    ├── nodes/                ← 节点文件
-    │   ├── node0_001.json    ← 叶节点（含原始消息）
-    │   ├── node1_001.json    ← 父节点
-    │   └── ...
-    └── debug.log             ← 调试日志
+    └── sessions/
+        └── <sessionID>/          ← 每个会话一个目录
+            ├── buffer-states.json  ← Buffer state 快照
+            ├── index.json          ← 树索引
+            ├── meta.json           ← 会话元数据（如系统提示词）
+            ├── debug.log           ← 调试日志（仅 debug: true 时）
+            └── nodes/              ← 节点文件
+                ├── node0_001.json  ← 叶节点（含原始消息）
+                ├── node1_001.json  ← 父节点
+                └── ...
 ```
 
-每个项目的数据独立存储，互不干扰。
+数据按会话隔离——每个会话拥有自己的目录，每个项目拥有自己的 `data/` 根目录。
 
 ---
 
 ## 已知限制
 
 - 压缩需要调用 LLM，会产生 API 费用
+- 每个会话的记忆树相互独立，新会话不会继承旧会话的上下文（`search_memory_tree` 只能查询当前会话）
 - 首次在已有对话中启用时，最多同步最近 50 条消息（`maxSync`）
 - 子 Agent（subAgent）的消息不进入 buffer
 

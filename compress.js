@@ -142,11 +142,18 @@ async function compactOneLevel(state, config, level) {
   const nodeIds = state.tree.getLevelNodeIds(state.sessionId, level)
   if (nodeIds.length < state.config.compactThreshold) return null
 
+  // 只考虑当前 buffer 中存在的节点：旧会话遗留或 buffer 重置后的 active 节点
+  // 不在 buffer 中，无法参与合并（否则永远选中它们导致压缩停摆）
+  const inBufferIds = nodeIds.filter((id) =>
+    state.buffer.some((m) => m._node_id === id)
+  )
+  if (inBufferIds.length < state.config.compactThreshold) return null
+
   const branch = state.config.compactBranch
-  const targetIds = nodeIds.slice(0, branch)
+  const targetIds = inBufferIds.slice(0, branch)
   if (targetIds.length < 2) return null
 
-  // 先检查 buffer 中是否有这些子节点
+  // 目标节点必然在 buffer 中
   const childIdSet = new Set(targetIds)
   let firstTargetIdx = -1
   const toReplace = []

@@ -12,14 +12,12 @@ import * as fs from "fs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const TREE_KEY = "default"
-
 export default {
   id: "memory-tree",
   async server(ctx, options) {
     const dir = (ctx.directory) || (ctx.worktree) || ""
     const pluginDir = __dirname
-    const storePath = path.join(dir, ".opencode", "plugins", "memory-tree", "data")
+    const storeRoot = path.join(dir, ".opencode", "plugins", "memory-tree", "data")
 
     // 从 config.json 加载配置，options 中的值可以覆盖
     let config = {}
@@ -34,17 +32,18 @@ export default {
     const maxSync = options?.maxSync ?? config.maxSync ?? 50
     const debug = options?.debug ?? config.debug ?? false
 
-    const tree = new MemoryTree(storePath)
+    // 每个会话一个独立的记忆树，磁盘目录 data/sessions/<sessionID>/
+    const states = new Map()
 
-    let state = null
+    function getState(sessionID) {
+      if (!sessionID) return null
+      let s = states.get(sessionID)
+      if (s) return s
 
-    function getState() {
-      if (state) return state
-
-      const loaded = tree.loadBufferState(TREE_KEY)
+      const tree = new MemoryTree(path.join(storeRoot, "sessions", sessionID))
 
       let buffer = []
-
+      const loaded = tree.loadBufferState(sessionID)
       if (loaded) {
         try {
           buffer = JSON.parse(loaded.recent_buffer)
@@ -52,12 +51,11 @@ export default {
           buffer = []
         }
       }
-      // 无存档时不再 archive 节点，保持跨会话接续
 
       const savedPrompt = tree.getMeta("system_prompt") || ""
 
-      state = {
-        sessionId: TREE_KEY,
+      s = {
+        sessionId: sessionID,
         tree,
         buffer,
         compressorBusy: false,
@@ -70,13 +68,13 @@ export default {
         systemPrompt: savedPrompt,
         debug,
       }
-
-      return state
+      states.set(sessionID, s)
+      return s
     }
 
     function debugLog(s, msg) {
       if (!s.debug) return
-      const logFilePath = path.join(storePath, "debug.log")
+      const logFilePath = path.join(storeRoot, "sessions", s.sessionId, "debug.log")
       fs.appendFile(logFilePath, `[${Date.now()}] ${msg}\n`, () => {})
     }
 
@@ -94,7 +92,9 @@ export default {
           )
           if (isSubAgent) return
 
-          const s = getState()
+          const sessionID = messages[0]?.info?.sessionID
+          const s = getState(sessionID)
+          if (!s) return
 
           let lastKnownId = null
           for (let i = s.buffer.length - 1; i >= 0; i--) {
@@ -129,7 +129,7 @@ export default {
           }
 
           debugLog(s, `[transform] buffer len=${s.buffer.length} rawCount=${rawCount}`)
-          s.tree.saveBufferState(s.buffer, TREE_KEY)
+          s.tree.saveBufferState(s.buffer, sessionID)
 
           output.messages.length = 0
           output.messages.push(...s.buffer.map(bufferToMessage))
@@ -140,12 +140,14 @@ export default {
       },
 
       "experimental.chat.system.transform": async (
-        _input, output
+        input, output
       ) => {
         try {
           const system = output.system
           if (!system) return
-          const s = getState()
+          const sessionID = input.sessionID
+          const s = getState(sessionID)
+          if (!s) return
           s.systemPrompt = system.join("\n")
           s.tree.setMeta("system_prompt", s.systemPrompt)
         } catch (err) {
@@ -156,7 +158,10 @@ export default {
 
     return {
       tool: {
-        search_memory_tree: createSearchMemoryTreeTool(tree, () => TREE_KEY),
+        search_memory_tree: createSearchMemoryTreeTool((sessionID) => {
+          const s = getState(sessionID)
+          return s ? s.tree : null
+        }),
       },
       ...hooks,
     }

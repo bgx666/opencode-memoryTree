@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin"
 
-export function createSearchMemoryTreeTool(tree, getDefaultSessionId) {
+export function createSearchMemoryTreeTool(resolveTree) {
   return tool({
     description:
       "Query compressed conversation segments by node ID to recall details from earlier in the conversation. " +
@@ -14,8 +14,13 @@ export function createSearchMemoryTreeTool(tree, getDefaultSessionId) {
         .describe("The node ID to query, e.g. node0_001, node1_002"),
     },
     async execute(args, context) {
-      const sessionId = context.sessionID ?? getDefaultSessionId()
-      const node = tree.getNode(sessionId, args.node_id)
+      const sessionID = context.sessionID
+      const tree = resolveTree(sessionID)
+      if (!tree) {
+        return "Memory tree is not available for this session."
+      }
+
+      const node = tree.getNode(sessionID, args.node_id)
 
       if (!node) {
         return `Node "${args.node_id}" not found in memory tree. ` +
@@ -51,7 +56,7 @@ export function createSearchMemoryTreeTool(tree, getDefaultSessionId) {
         return `## Node: ${node.id} (leaf)\nSummary: ${node.summary}\n(No detailed messages available)`
       }
 
-      const children = tree.getChildren(sessionId, node.id)
+      const children = tree.getChildren(sessionID, node.id)
       if (children.length === 0) {
         return `## Node: ${node.id} (level ${node.level})\nSummary: ${node.summary}\n(No child nodes found)`
       }

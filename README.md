@@ -1,10 +1,8 @@
 # opencode-memory-tree
 
-> **⚠️ BETA** — This plugin is in active development. APIs and data format may change.
-
 [**中文**](README.zh-CN.md)
 
-OpenCode plugin: compress conversation history into a hierarchical memory tree. Persistent, searchable, AI-accessible — across sessions, within the same project.
+OpenCode plugin: compress conversation history into a hierarchical memory tree. Persistent, searchable, AI-accessible — each session gets its own memory tree, giving it effectively unlimited context.
 
 ---
 
@@ -25,7 +23,7 @@ Restart OpenCode. The plugin will be loaded automatically.
 
 ### Manual installation (no npm)
 
-Copy the `opencode-memory-tree` directory to `~/.config/opencode/plugins/memory-tree/` — OpenCode auto-discovers plugins in that directory. No config file change needed.
+Copy the `opencode-memory-tree` directory to a project's `.opencode/plugins/memory-tree/` — OpenCode auto-discovers plugins in that directory. The plugin then only applies to that project. (Alternatively, copy it to `~/.config/opencode/plugins/memory-tree/` to enable it globally for all projects.) No config file change needed.
 
 ---
 
@@ -43,7 +41,8 @@ OpenCode transform hook
 ║  │ synced with OpenCode on      │║
 ║  │ every transform hook call    │║
 ║  └──────────────────────────────╢
-║  110 raw messages → compression │║
+║  raw count reaches maxRaw      │║
+║  (default 10) → compression    │║
 ╚══════════════════════════════════╝
        ↓
 ╔══════════════════════════════════╗
@@ -58,6 +57,15 @@ OpenCode transform hook
 ║  search_memory_tree tool        ║
 ╚══════════════════════════════════╝
 ```
+
+### Per-session isolation
+
+Each OpenCode session gets its own isolated memory tree:
+
+- **Buffer and tree are per-session** — stored in `data/sessions/<sessionID>/`. One session's messages never leak into another session's context.
+- **Resuming a session** (same session ID after restart) restores its buffer and tree automatically.
+- **Starting a new session** begins with a clean buffer and an empty tree — switching sessions means a fresh context, and each session's memory grows independently toward effectively unlimited context.
+- No cross-session state races: concurrent sessions write to separate directories.
 
 ### Buffer State
 
@@ -90,7 +98,7 @@ What the LLM receives:
 │ user: raw message 629                    │     position)
 │ user: raw message 630                    │
 │ user: raw message 631                    │  ← remaining raw messages
-│ ...                                      │    (total 110, triggering
+│ ...                                      │    (until maxRaw, triggering
 │ user: raw message 669                    │     next compression)
 │ user: [COMPRESS] Compress the following  │  ← instruction
 │ user: raw message 560                    │
@@ -147,16 +155,16 @@ Each node is saved as a separate JSON file. The structure differs between leaf a
 ### Buffer State lifecycle
 
 ```
-Phase ①: Accumulate raw messages (110 reached → trigger)
+Phase ①: Accumulate raw messages (maxRaw reached → trigger)
 ┌──────────────────────────────────────────────┐
-│ [msg1] [msg2] [msg3] ... [msg110]            │
-│ raw messages: 110/110                         │
+│ [msg1] [msg2] [msg3] ... [msg10]             │
+│ raw messages: 10/10 (maxRaw default)          │
 └──────────────────────────────────────────────┘
 
-Phase ②: Compress first 70 messages → leaf node
+Phase ②: Compress first minBatch messages → leaf node
 ┌──────────────────────────────────────────────┐
-│ [node0_001 第0-69条: <summary>] [msg71] ...  │
-│       ↑ 70 messages condensed into 1 summary │
+│ [node0_001 第0-4条: <summary>] [msg6] ...    │
+│       ↑ 5 messages condensed into 1 summary   │
 │                                               │
 │  Disk: node0_001.json                         │
 │  ┌─────────────────────────────────────┐      │
@@ -195,7 +203,7 @@ Level 1       node1_001       node1_002
              ↗    ↘          ↗    ↘
 Level 0  node0_001 node0_002 node0_003 node0_004
           ↓         ↓         ↓         ↓
-       msg1-70  msg71-140  msg141-210 msg211-280
+        msg0-4   msg5-9    msg10-14  msg15-19
         (details) (details)  (details)  (details)
 ```
 
@@ -207,7 +215,7 @@ Level 0  node0_001 node0_002 node0_003 node0_004
 
 ## Configuration
 
-All settings in one file: `~/.config/opencode/plugins/memory-tree/config.json`
+All settings in one file: `config.json` in the plugin directory (e.g. `.opencode/plugins/memory-tree/config.json`)
 
 ```json
 {
@@ -218,10 +226,11 @@ All settings in one file: `~/.config/opencode/plugins/memory-tree/config.json`
   },
   "subAgents": ["explore", "general"],
   "maxSync": 50,
-  "maxRaw": 110,
-  "minBatch": 70,
+  "maxRaw": 10,
+  "minBatch": 5,
   "compactThreshold": 6,
-  "compactBranch": 3
+  "compactBranch": 3,
+  "debug": false
 }
 ```
 
@@ -231,10 +240,11 @@ All settings in one file: `~/.config/opencode/plugins/memory-tree/config.json`
 | `compressor.model` | `deepseek-v4-flash` | Model used for compression |
 | `compressor.baseUrl` | — | API endpoint |
 | `maxSync` | 50 | Max messages synced from history on first load |
-| `maxRaw` | 110 | Raw message count triggering compression |
-| `minBatch` | 70 | Messages compressed per batch |
+| `maxRaw` | 10 | Raw message count triggering compression |
+| `minBatch` | 5 | Messages compressed per batch |
 | `compactThreshold` | 6 | Node count at a level triggering parent merge |
 | `compactBranch` | 3 | Nodes merged per parent |
+| `debug` | false | Write `debug.log` in the session data directory |
 
 ### API Key Security
 
@@ -259,24 +269,28 @@ setx OPENCODE_MEMORY_API_KEY "sk-xxx"
 ## Data Storage
 
 ```
-.opencode/plugins/memory-tree/
+<project>/.opencode/plugins/memory-tree/
 └── data/
-    ├── buffer-states.json    ← Buffer state snapshot
-    ├── index.json            ← Tree index
-    ├── nodes/                ← Node files
-    │   ├── node0_001.json    ← Leaf node (has details)
-    │   ├── node1_001.json    ← Parent node
-    │   └── ...
-    └── debug.log             ← Debug log
+    └── sessions/
+        └── <sessionID>/          ← one directory per session
+            ├── buffer-states.json  ← Buffer state snapshot
+            ├── index.json          ← Tree index
+            ├── meta.json           ← Session metadata (e.g. system prompt)
+            ├── debug.log           ← Debug log (only when debug: true)
+            └── nodes/              ← Node files
+                ├── node0_001.json  ← Leaf node (has details)
+                ├── node1_001.json  ← Parent node
+                └── ...
 ```
 
-Data is isolated per project — each project has its own `data/` directory.
+Data is isolated per session — each session has its own directory, and each project has its own `data/` root.
 
 ---
 
 ## Known limitations
 
 - Compression requires LLM API calls (costs apply)
+- Each session's memory tree is independent — a new session does not inherit previous sessions' context (use `search_memory_tree` is session-local)
 - On first load, syncs at most 50 recent messages (`maxSync`)
 - Sub-agent messages do not enter the buffer
 
