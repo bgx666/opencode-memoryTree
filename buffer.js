@@ -4,14 +4,19 @@ export function messageToBuffer(message, parts) {
 
   const role = (info.role) || "user"
 
-  const content = extractText(parts)
+  // 过滤 opencode 注入的模式提示（plan/build system-reminder）：
+  // 它们在原生上下文中不持久化，不应进入记忆树
+  const filteredParts = parts.filter(
+    (p) => !(p.type === "text" && p.synthetic && p.text?.startsWith("<system-reminder>"))
+  )
+  const content = extractText(filteredParts)
 
   return {
     role: role,
     content,
     original_id: info.id,
     _span: 1,
-    _parts: parts,
+    _parts: filteredParts,
     tool_call_id: info.toolCallId,
     tool_calls: (info.toolCalls)?.map((tc) => ({
       id: tc.id,
